@@ -19,7 +19,7 @@ use std::sync::{
 
 use tokio::sync::broadcast::Sender;
 
-use crate::{async_trait, Error, KernelUpdate, Result, Sequence, UpdateEvent};
+use crate::{async_trait, metadata::PartialKernelUpdate, Error, Result, Sequence, UpdateEvent};
 
 pub struct UpdateWriter {
     sequence: Arc<AtomicU64>,
@@ -34,9 +34,11 @@ impl UpdateWriter {
 
 #[async_trait]
 impl crate::UpdateWriter for UpdateWriter {
-    async fn append(&mut self, update: KernelUpdate) -> Result<Sequence> {
+    async fn append(&mut self, update: PartialKernelUpdate) -> Result<Sequence> {
         let sequence = self.sequence.fetch_add(1, Ordering::SeqCst) + 1;
-        self.tx.send((sequence, update)).map_err(Error::unknown)?;
+        self.tx
+            .send((sequence, update.into()))
+            .map_err(Error::unknown)?;
         Ok(sequence)
     }
 

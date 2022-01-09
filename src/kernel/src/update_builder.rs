@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::metadata::{BucketUpdate, KernelUpdate};
+use crate::metadata::{BucketUpdate, KernelUpdate, PartialKernelUpdate};
 
 #[derive(Default)]
 pub struct BucketUpdateBuilder {
@@ -47,22 +47,12 @@ impl From<BucketUpdateBuilder> for BucketUpdate {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct KernelUpdateBuilder {
     update: KernelUpdate,
 }
 
 impl KernelUpdateBuilder {
-    pub fn put_meta(&mut self, name: impl Into<String>, meta: impl Into<Vec<u8>>) -> &mut Self {
-        self.update.put_meta.insert(name.into(), meta.into());
-        self
-    }
-
-    pub fn remove_meta(&mut self, name: impl Into<String>) -> &mut Self {
-        self.update.remove_meta.push(name.into());
-        self
-    }
-
     pub fn add_stream(&mut self, name: impl Into<String>) -> &mut Self {
         self.update.add_streams.push(name.into());
         self
@@ -78,6 +68,21 @@ impl KernelUpdateBuilder {
         self
     }
 
+    pub fn remove_bucket(&mut self, name: impl Into<String>) -> &mut Self {
+        self.update.remove_buckets.push(name.into());
+        self
+    }
+
+    pub fn put_meta(&mut self, name: impl Into<String>, meta: impl Into<Vec<u8>>) -> &mut Self {
+        self.update.put_meta.insert(name.into(), meta.into());
+        self
+    }
+
+    pub fn remove_meta(&mut self, name: impl Into<String>) -> &mut Self {
+        self.update.remove_meta.push(name.into());
+        self
+    }
+
     pub fn update_bucket(
         &mut self,
         name: impl Into<String>,
@@ -89,11 +94,6 @@ impl KernelUpdateBuilder {
         self
     }
 
-    pub fn remove_bucket(&mut self, name: impl Into<String>) -> &mut Self {
-        self.update.remove_buckets.push(name.into());
-        self
-    }
-
     pub fn build(&mut self) -> KernelUpdate {
         std::mem::take(&mut self.update)
     }
@@ -102,5 +102,54 @@ impl KernelUpdateBuilder {
 impl From<KernelUpdateBuilder> for KernelUpdate {
     fn from(mut b: KernelUpdateBuilder) -> Self {
         b.build()
+    }
+}
+
+#[derive(Default)]
+pub struct PartialKernelUpdateBuilder {
+    update: PartialKernelUpdate,
+}
+
+impl PartialKernelUpdateBuilder {
+    pub fn put_meta(&mut self, name: impl Into<String>, meta: impl Into<Vec<u8>>) -> &mut Self {
+        self.update.put_meta.insert(name.into(), meta.into());
+        self
+    }
+
+    pub fn remove_meta(&mut self, name: impl Into<String>) -> &mut Self {
+        self.update.remove_meta.push(name.into());
+        self
+    }
+
+    pub fn update_bucket(
+        &mut self,
+        name: impl Into<String>,
+        update: impl Into<BucketUpdate>,
+    ) -> &mut Self {
+        self.update
+            .update_buckets
+            .insert(name.into(), update.into());
+        self
+    }
+
+    pub fn build(&mut self) -> PartialKernelUpdate {
+        std::mem::take(&mut self.update)
+    }
+}
+
+impl From<PartialKernelUpdateBuilder> for PartialKernelUpdate {
+    fn from(mut b: PartialKernelUpdateBuilder) -> Self {
+        b.build()
+    }
+}
+
+impl From<PartialKernelUpdate> for KernelUpdate {
+    fn from(update: PartialKernelUpdate) -> Self {
+        Self {
+            put_meta: update.put_meta,
+            remove_meta: update.remove_meta,
+            update_buckets: update.update_buckets,
+            ..KernelUpdate::default()
+        }
     }
 }

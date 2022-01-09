@@ -15,7 +15,7 @@
 use engula_futures::io::{RandomRead, SequentialWrite};
 use engula_journal::{StreamReader, StreamWriter};
 
-use crate::{async_trait, KernelUpdate, Result, Sequence};
+use crate::{async_trait, metadata::PartialKernelUpdate, KernelUpdate, Result, Sequence};
 
 /// A stateful environment for storage engines.
 #[async_trait]
@@ -26,6 +26,11 @@ pub trait Kernel {
     type StreamWriter: StreamWriter;
     type RandomReader: RandomRead;
     type SequentialWriter: SequentialWrite;
+
+    async fn create_stream(&self, stream_name: &str) -> Result<()>;
+    async fn delete_stream(&self, stream_name: &str) -> Result<()>;
+    async fn create_bucket(&self, bucket_name: &str) -> Result<()>;
+    async fn delete_bucket(&self, bucket_name: &str) -> Result<()>;
 
     /// Returns a reader to read updates.
     async fn new_update_reader(&self) -> Result<Self::UpdateReader>;
@@ -64,7 +69,7 @@ pub trait UpdateReader {
 #[async_trait]
 pub trait UpdateWriter {
     /// Appends an update.
-    async fn append(&mut self, update: KernelUpdate) -> Result<Sequence>;
+    async fn append(&mut self, update: PartialKernelUpdate) -> Result<Sequence>;
 
     /// Releases updates up to a sequence (exclusive).
     ///

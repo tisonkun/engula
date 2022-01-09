@@ -42,7 +42,7 @@ pub use self::{
 
 #[cfg(test)]
 mod tests {
-    use crate::*;
+    use crate::{update_builder::PartialKernelUpdateBuilder, *};
 
     #[tokio::test]
     async fn kernel() -> Result<()> {
@@ -60,11 +60,41 @@ mod tests {
         let bucket_name = "bucket";
         let object_name = "object";
 
-        let update = KernelUpdateBuilder::default()
+        let handle = {
+            let expect_add_stream = KernelUpdateBuilder::default()
+                .add_stream(stream_name)
+                .build();
+            let expect_add_bucket = KernelUpdateBuilder::default()
+                .add_bucket(bucket_name)
+                .build();
+            let mut reader = kernel.new_update_reader().await?;
+            tokio::spawn(async move {
+                let update = reader.wait_next().await.unwrap();
+                assert_eq!(update, (1, expect_add_stream));
+                let update = reader.wait_next().await.unwrap();
+                assert_eq!(update, (2, expect_add_bucket));
+            })
+        };
+        kernel.create_stream(stream_name).await.unwrap();
+        kernel.create_bucket(bucket_name).await.unwrap();
+        handle.await.unwrap();
+
+        // check if stream and bucket successfully created
+        kernel.new_stream_writer(stream_name).await.unwrap();
+        kernel
+            .new_sequential_writer(bucket_name, object_name)
+            .await
+            .unwrap();
+
+        let update = PartialKernelUpdateBuilder::default()
             .put_meta("a", "b")
             .remove_meta("b")
-            .add_stream(stream_name)
-            .add_bucket(bucket_name)
+            .update_bucket(
+                bucket_name,
+                BucketUpdateBuilder::default()
+                    .add_object(object_name, vec![0])
+                    .build(),
+            )
             .build();
 
         let handle = {
@@ -72,7 +102,7 @@ mod tests {
             let mut reader = kernel.new_update_reader().await?;
             tokio::spawn(async move {
                 let update = reader.wait_next().await.unwrap();
-                assert_eq!(update, (1, expect));
+                assert_eq!(update, (3, expect.into()));
             })
         };
 
@@ -80,12 +110,6 @@ mod tests {
         writer.append(update).await?;
         handle.await.unwrap();
 
-        // Checks if the stream and bucket have been created.
-        kernel.new_stream_writer(stream_name).await.unwrap();
-        kernel
-            .new_sequential_writer(bucket_name, object_name)
-            .await
-            .unwrap();
         Ok(())
     }
 }

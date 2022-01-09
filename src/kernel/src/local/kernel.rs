@@ -12,14 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::{atomic::AtomicU64, Arc};
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc,
+};
 
 use engula_journal::Journal;
 use engula_storage::Storage;
 use tokio::sync::broadcast;
 
 use super::{update_reader::UpdateReader, update_writer::UpdateWriter};
-use crate::{async_trait, KernelUpdate, Result, Sequence, UpdateReader as _};
+use crate::{async_trait, Error, KernelUpdate, KernelUpdateBuilder, Result, Sequence};
 
 pub struct Kernel<J, S> {
     journal: Arc<J>,
@@ -34,37 +37,13 @@ where
     S: Storage + Send + Sync + 'static,
 {
     pub async fn init(journal: J, storage: S) -> Result<Self> {
-        let (update_tx, update_rx) = broadcast::channel(1024);
-        let journal = Arc::new(journal);
-        let storage = Arc::new(storage);
-        let reader = UpdateReader::new(update_rx);
-        Self::subscribe_updates(reader, journal.clone(), storage.clone());
+        let (update_tx, _) = broadcast::channel(1024);
         Ok(Self {
-            journal,
-            storage,
+            journal: Arc::new(journal),
+            storage: Arc::new(storage),
             sequence: Arc::new(AtomicU64::new(0)),
             update_tx,
         })
-    }
-
-    fn subscribe_updates(mut reader: UpdateReader, journal: Arc<J>, storage: Arc<S>) {
-        tokio::spawn(async move {
-            loop {
-                let (_, update) = reader.wait_next().await.unwrap();
-                for stream in &update.add_streams {
-                    journal.create_stream(stream).await.unwrap();
-                }
-                for stream in &update.remove_streams {
-                    journal.delete_stream(stream).await.unwrap();
-                }
-                for bucket in &update.add_buckets {
-                    storage.create_bucket(bucket).await.unwrap();
-                }
-                for bucket in &update.remove_buckets {
-                    storage.delete_bucket(bucket).await.unwrap();
-                }
-            }
-        });
     }
 }
 
@@ -123,5 +102,53 @@ where
             .new_sequential_writer(bucket_name, object_name)
             .await?;
         Ok(writer)
+    }
+
+    async fn create_stream(&self, stream_name: &str) -> Result<()> {
+        self.journal.create_stream(stream_name).await?;
+        let sequence = self.sequence.fetch_add(1, Ordering::SeqCst) + 1;
+        let update = KernelUpdateBuilder::default()
+            .add_stream(stream_name)
+            .build();
+        self.update_tx
+            .send((sequence, update))
+            .map_err(Error::unknown)?;
+        Ok(())
+    }
+
+    async fn delete_stream(&self, stream_name: &str) -> Result<()> {
+        self.journal.delete_stream(stream_name).await?;
+        let sequence = self.sequence.fetch_add(1, Ordering::SeqCst) + 1;
+        let update = KernelUpdateBuilder::default()
+            .remove_stream(stream_name)
+            .build();
+        self.update_tx
+            .send((sequence, update))
+            .map_err(Error::unknown)?;
+        Ok(())
+    }
+
+    async fn create_bucket(&self, bucket_name: &str) -> Result<()> {
+        self.storage.create_bucket(bucket_name).await?;
+        let sequence = self.sequence.fetch_add(1, Ordering::SeqCst) + 1;
+        let update = KernelUpdateBuilder::default()
+            .add_bucket(bucket_name)
+            .build();
+        self.update_tx
+            .send((sequence, update))
+            .map_err(Error::unknown)?;
+        Ok(())
+    }
+
+    async fn delete_bucket(&self, bucket_name: &str) -> Result<()> {
+        self.storage.delete_bucket(bucket_name).await?;
+        let sequence = self.sequence.fetch_add(1, Ordering::SeqCst) + 1;
+        let update = KernelUpdateBuilder::default()
+            .remove_bucket(bucket_name)
+            .build();
+        self.update_tx
+            .send((sequence, update))
+            .map_err(Error::unknown)?;
+        Ok(())
     }
 }

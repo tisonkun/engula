@@ -21,6 +21,12 @@ message BucketUpdate {
   repeated string remove_objects = 2;
 }
 
+message PartialKernelUpdate {
+  map<string, bytes> put_meta = 1;
+  repeated string remove_meta = 2;
+  map<string, BucketUpdate> update_buckets = 3;
+}
+
 message KernelUpdate {
   map<string, bytes> put_meta = 1;
   repeated string remove_meta = 2;
