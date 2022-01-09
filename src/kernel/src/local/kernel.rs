@@ -29,6 +29,8 @@ pub struct Kernel<J, S> {
     storage: Arc<S>,
     sequence: Arc<AtomicU64>,
     update_tx: broadcast::Sender<(Sequence, KernelUpdate)>,
+    // we must hold this field otherwise tx.send may fail
+    _update_rx: broadcast::Receiver<(Sequence, KernelUpdate)>,
 }
 
 impl<J, S> Kernel<J, S>
@@ -37,12 +39,13 @@ where
     S: Storage + Send + Sync + 'static,
 {
     pub async fn init(journal: J, storage: S) -> Result<Self> {
-        let (update_tx, _) = broadcast::channel(1024);
+        let (update_tx, _update_rx) = broadcast::channel(1024);
         Ok(Self {
             journal: Arc::new(journal),
             storage: Arc::new(storage),
             sequence: Arc::new(AtomicU64::new(0)),
             update_tx,
+            _update_rx,
         })
     }
 }

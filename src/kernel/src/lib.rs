@@ -54,30 +54,35 @@ mod tests {
     async fn test_kernel<K>(kernel: K) -> Result<()>
     where
         K: Kernel,
-        K::UpdateReader: Send + 'static,
     {
         let stream_name = "stream";
         let bucket_name = "bucket";
         let object_name = "object";
 
-        let handle = {
-            let expect_add_stream = KernelUpdateBuilder::default()
-                .add_stream(stream_name)
-                .build();
-            let expect_add_bucket = KernelUpdateBuilder::default()
-                .add_bucket(bucket_name)
-                .build();
-            let mut reader = kernel.new_update_reader().await?;
-            tokio::spawn(async move {
-                let update = reader.wait_next().await.unwrap();
-                assert_eq!(update, (1, expect_add_stream));
-                let update = reader.wait_next().await.unwrap();
-                assert_eq!(update, (2, expect_add_bucket));
-            })
-        };
+        let mut reader = kernel.new_update_reader().await?;
+
         kernel.create_stream(stream_name).await.unwrap();
         kernel.create_bucket(bucket_name).await.unwrap();
-        handle.await.unwrap();
+
+        assert_eq!(
+            reader.wait_next().await.unwrap(),
+            (
+                1,
+                KernelUpdateBuilder::default()
+                    .add_stream(stream_name)
+                    .build()
+            )
+        );
+
+        assert_eq!(
+            reader.wait_next().await.unwrap(),
+            (
+                2,
+                KernelUpdateBuilder::default()
+                    .add_bucket(bucket_name)
+                    .build()
+            )
+        );
 
         // check if stream and bucket successfully created
         kernel.new_stream_writer(stream_name).await.unwrap();
@@ -97,18 +102,12 @@ mod tests {
             )
             .build();
 
-        let handle = {
-            let expect = update.clone();
-            let mut reader = kernel.new_update_reader().await?;
-            tokio::spawn(async move {
-                let update = reader.wait_next().await.unwrap();
-                assert_eq!(update, (3, expect.into()));
-            })
-        };
-
         let mut writer = kernel.new_update_writer().await?;
-        writer.append(update).await?;
-        handle.await.unwrap();
+        writer.append(update.clone()).await?;
+
+        let expect = update;
+        let update = reader.wait_next().await.unwrap();
+        assert_eq!(update, (3, expect.into()));
 
         Ok(())
     }
