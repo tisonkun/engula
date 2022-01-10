@@ -35,6 +35,6 @@ For internal designs of Engula, please see the [docs](docs).
 
 For discussions about ideas, designs, and roadmaps, please see the [discussions](https://github.com/engula/engula/discussions).
 
-## Contributing
+## Contribute
 
 Thanks for your help improving the project! We have a [contributing guide](CONTRIBUTING.md) to help you get involved in the Engula project.
