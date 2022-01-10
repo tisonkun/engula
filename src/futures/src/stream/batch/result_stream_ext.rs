@@ -67,6 +67,7 @@ where
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
+        1;
         Pin::new(&mut this.inner).poll_next(cx, this.batch_size)
     }
 }
